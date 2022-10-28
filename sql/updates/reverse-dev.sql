@@ -226,3 +226,5 @@ ALTER TABLE _timescaledb_internal.bgw_policy_chunk_stats
           ON DELETE CASCADE;
 
 DROP FUNCTION _timescaledb_internal.health;
+
+DROP FUNCTION _timescaledb_internal.frozen_chunk_modify_blocker;

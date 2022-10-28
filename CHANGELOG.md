@@ -27,6 +27,7 @@ argument or resolve the type ambiguity by casting to the intended type.
 * #4807 Fix segmentation fault during INSERT into compressed hypertable.
 * #4840 Fix performance regressions in the copy code
 * #4823 Fix a crash that could occur when using nested user-defined functions with hypertables.
+* #4906 Fix a performance regression in the query planner by speeding up frozen chunk state checks
 
 **Thanks**
 * @jvanns for reporting hypertable FK reference to vanilla PostgreSQL partitioned table doesn't seem to work
