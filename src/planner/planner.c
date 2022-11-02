@@ -676,30 +676,43 @@ get_or_add_baserel_from_cache(Oid chunk_reloid, Oid parent_reloid)
 		return entry;
 	}
 
-	/*
-	 * This reloid is not in the chunk cache, so do the full metadata
-	 * lookup.
-	 */
-	int32 hypertable_id = ts_chunk_get_hypertable_id_by_relid(chunk_reloid);
-
-	if (OidIsValid(hypertable_id))
+	if (OidIsValid(parent_reloid))
 	{
-		/*
-		 * This is a chunk. Look up the hypertable for it.
-		 */
-		if (OidIsValid(parent_reloid))
+		ht = ts_planner_get_hypertable(parent_reloid, CACHE_FLAG_CHECK);
+
+#ifdef USE_ASSERT_CHECKING
+		/* Sanity check on the caller-specified hypertable reloid. */
+		int32 parent_hypertable_id = ts_chunk_get_hypertable_id_by_relid(chunk_reloid);
+		if (OidIsValid(parent_hypertable_id))
 		{
-			/* Sanity check on the caller-specified hypertable reloid. */
-			Assert(ts_hypertable_id_to_relid(hypertable_id) == parent_reloid);
+			Assert(ts_hypertable_id_to_relid(parent_hypertable_id) == parent_reloid);
+
+			if(ht != NULL)
+			{
+				Assert(ht->fd.id == parent_hypertable_id);
+			}
 		}
-		else
+#endif
+	}
+	else
+	{
+		/* Hypertable reloid not specified by the caller, look it up by
+		 * an expensive metadata scan.
+		 */
+		int32 hypertable_id = ts_chunk_get_hypertable_id_by_relid(chunk_reloid);
+
+		if (OidIsValid(hypertable_id))
 		{
 			/* Hypertable reloid not specified by the caller, look it up. */
 			parent_reloid = ts_hypertable_id_to_relid(hypertable_id);
+
+			if (OidIsValid(parent_reloid))
+			{
+				ht = ts_planner_get_hypertable(parent_reloid, CACHE_FLAG_NONE);
+				Assert(ht != NULL);
+				Assert(ht->fd.id == hypertable_id);
+			}
 		}
-		ht = ts_planner_get_hypertable(parent_reloid, CACHE_FLAG_NONE);
-		Assert(ht != NULL);
-		Assert(ht->fd.id == hypertable_id);
 	}
 
 	/* Cache the result. */
@@ -791,6 +804,7 @@ classify_relation(const PlannerInfo *root, const RelOptInfo *rel, Hypertable **h
 	 */
 	BaserelInfoEntry *entry = get_or_add_baserel_from_cache(rte->relid, parent_rte->relid);
 	*ht = entry->ht;
+
 	return *ht ? TS_REL_CHUNK_CHILD : TS_REL_OTHER;
 }
 
