@@ -75,20 +75,35 @@ returning job_date;
 ")
 export JOB_DATE
 
-# Split the regression.diffs into per-test files.
-gawk '
-    match($0, /^(diff|\+\+\+|\-\-\-) .*\/(.*)[.]out/, a) {
-        file = a[2] ".diff";
-        next;
+# Parse the installcheck.log to find the individual test results. Note that this
+# file might not exist for failed checks or non-regression checks like SQLSmith.
+# We still want to save the other logs.
+if [ -f 'installcheck.log' ]
+then
+    gawk -v OFS='\t' '
+    match($0, /^(test|    ) ([^ ]+)[ ]+\.\.\.[ ]+([^ ]+) (|\(.*\))[ ]+([0-9]+) ms$/, a) {
+        print ENVIRON["JOB_DATE"], a[2], tolower(a[3] (a[4] ? (" " a[4]) : "")), a[5];
     }
+    ' installcheck.log > tests.tsv
 
-    { if (file) print $0 > file; }
-' regression.log
+    # Save the test results into the database.
+    "${PSQL[@]}" -c "\copy test from tests.tsv"
+
+    # Split the regression.diffs into per-test files.
+    gawk '
+        match($0, /^(diff|\+\+\+|\-\-\-) .*\/(.*)[.]out/, a) {
+            file = a[2] ".diff";
+            next;
+        }
+
+        { if (file) print $0 > file; }
+    ' regression.log
+fi
 
 # Snip the long sequences of "+" or "-" changes in the diffs.
 for x in *.diff;
 do
-    if ! [ -e "$x" ] ; then continue ; fi
+    if ! [ -f "$x" ] ; then continue ; fi
     gawk -v max_context_lines=10 -v min_context_lines=2 '
         /^-/ { new_sign = "-" }
         /^+/ { new_sign = "+" }
@@ -132,21 +147,6 @@ do
         }' "$x" > "$x.tmp"
     mv "$x.tmp" "$x"
 done
-
-# Parse the installcheck.log to find the individual test results. Note that this
-# file might not exist for failed checks or non-regression checks like SQLSmith.
-# We still want to save the other logs.
-if [ -f 'installcheck.log' ]
-then
-    gawk -v OFS='\t' '
-    match($0, /^(test|    ) ([^ ]+)[ ]+\.\.\.[ ]+([^ ]+) (|\(.*\))[ ]+([0-9]+) ms$/, a) {
-        print ENVIRON["JOB_DATE"], a[2], tolower(a[3] (a[4] ? (" " a[4]) : "")), a[5];
-    }
-    ' installcheck.log > tests.tsv
-
-    # Save the test results into the database.
-    "${PSQL[@]}" -c "\copy test from tests.tsv"
-fi
 
 # Upload the logs.
 for x in sanitizer/* {sqlsmith,sanitizer,stacktrace,postgres-failure}.log *.diff
