@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
 set -xue
 
-if ! [ -e 'installcheck.log' ]
-then
-    # Probably the previous steps have failed and we have nothing to upload.
-    echo "installcheck.log does not exist"
-    exit 0
-fi
-
 if [ -z "${CI_STATS_DB:-}" ]
 then
     # The secret with the stats db connection string is not accessible in forks.
@@ -140,18 +133,23 @@ do
     mv "$x.tmp" "$x"
 done
 
-# Parse the installcheck.log to find the individual test results.
-gawk -v OFS='\t' '
-match($0, /^(test|    ) ([^ ]+)[ ]+\.\.\.[ ]+([^ ]+) (|\(.*\))[ ]+([0-9]+) ms$/, a) {
-    print ENVIRON["JOB_DATE"], a[2], tolower(a[3] (a[4] ? (" " a[4]) : "")), a[5];
-}
-' installcheck.log > tests.tsv
+# Parse the installcheck.log to find the individual test results. Note that this
+# file might not exist for failed checks or non-regression checks like SQLSmith.
+# We still want to save the other logs.
+if [ -f 'installcheck.log' ]
+then
+    gawk -v OFS='\t' '
+    match($0, /^(test|    ) ([^ ]+)[ ]+\.\.\.[ ]+([^ ]+) (|\(.*\))[ ]+([0-9]+) ms$/, a) {
+        print ENVIRON["JOB_DATE"], a[2], tolower(a[3] (a[4] ? (" " a[4]) : "")), a[5];
+    }
+    ' installcheck.log > tests.tsv
 
-# Save the test results into the database.
-"${PSQL[@]}" -c "\copy test from tests.tsv"
+    # Save the test results into the database.
+    "${PSQL[@]}" -c "\copy test from tests.tsv"
+fi
 
 # Upload the logs.
-for x in sanitizer/* {sanitizer,stacktrace,postgres-failure}.log *.diff
+for x in sanitizer/* {sqlsmith,sanitizer,stacktrace,postgres-failure}.log *.diff
 do
     if ! [ -e "$x" ]; then continue ; fi
     "${PSQL[@]}" <<<"

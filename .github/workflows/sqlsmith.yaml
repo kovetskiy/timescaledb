@@ -74,7 +74,12 @@ jobs:
     - name: Run SQLsmith
       run: |
         cd sqlsmith
-        for i in `seq 1 10`; do ./sqlsmith --seed=$((16#$(openssl rand -hex 3))) --exclude-catalog --target="host=/tmp dbname=smith" --max-queries=10000; done
+        for _ in {1..10}
+        do
+            ./sqlsmith --seed=$((16#$(openssl rand -hex 3))) --exclude-catalog \
+                --target="host=/tmp dbname=smith" --max-queries=10000 \
+            | tee sqlsmith.log # We only keep the last log, they're big.
+        done
 
     - name: Check for coredumps
       if: always()
