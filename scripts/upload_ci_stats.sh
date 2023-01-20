@@ -17,8 +17,10 @@ fi
 
 PSQL=(psql "${CI_STATS_DB}" -qtAX "--set=ON_ERROR_STOP=1")
 
-# The tables we are going to use.
-DESIRED_SCHEMA="
+# The tables we are going to use. This schema is here just as a reminder, you'll
+# have to create them manually. After you manually change the actual DB schema,
+# don't forget to append the needed migration code below.
+: "
 create extension if not exists timescaledb;
 
 create table job(
@@ -60,40 +62,7 @@ create table log(
 create unique index on log(job_date, test_name);
 
 select create_hypertable('log', 'job_date');
-
--- don't add a trailing newline because bash command substitution removes it"
-
-DROP_QUERY="
-drop table if exists test cascade;
-drop table if exists job cascade;
-drop table if exists log cascade;
 "
-
-# Recreate the tables if the schema changed.
-EXISTING_SCHEMA=$("${PSQL[@]}" -c "
-    create table if not exists _schema(create_query text, drop_query text);
-    select create_query from _schema;
-")
-
-if ! [ "${EXISTING_SCHEMA}" == "${DESIRED_SCHEMA}" ];
-then
-    "${PSQL[@]}" -v new_create="$DESIRED_SCHEMA" -v new_drop="$DROP_QUERY" <<<"
--- Run both the old and the new drop queries and ignore errors, to try to
--- bring the database into a predictable state even if it's current state is
--- incorrect (e.g. _schema doesn't actually match the existing tables).
-\set ON_ERROR_STOP 0
-select drop_query from _schema \gexec
-:new_drop
-\set ON_ERROR_STOP 1
-
--- Create new tables.
-begin;
-:new_create
-truncate table _schema;
-insert into _schema values (:'new_create', :'new_drop');
-commit;
-"
-fi
 
 # Create the job record.
 COMMIT_SHA=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse @)
