@@ -73,12 +73,13 @@ jobs:
     # 10 times 10000 queries seems to take roughly 40 minutes in CI
     - name: Run SQLsmith
       run: |
+        set -o pipefail
         cd sqlsmith
         for _ in {1..10}
         do
             ./sqlsmith --seed=$((16#$(openssl rand -hex 3))) --exclude-catalog \
                 --target="host=/tmp dbname=smith" --max-queries=10000 \
-            | tee sqlsmith.log # We only keep the last log, they're big.
+            2>&1 | tee sqlsmith.log # We only keep the last log.
         done
 
     - name: Check for coredumps
@@ -95,10 +96,19 @@ jobs:
     - name: Stack trace
       if: always() && steps.collectlogs.outputs.coredumps == 'true'
       run: |
-        sudo coredumpctl gdb <<EOT
-          printf "%s\n\n", debug_query_string
+        sudo coredumpctl gdb <<<"
+          set verbose on
+          set trace-commands on
+          show debug-file-directory
+          printf "'"'"query = '%s'\n\n"'"'", debug_query_string
+          frame function ExceptionalCondition
+          printf "'"'"condition = '%s'\n"'"'", conditionName
+          up 1
+          l
+          info args
+          info locals
           bt full
-        EOT
+        " 2>&1 | tee stacktrace.log
         ./scripts/bundle_coredumps.sh
         false
 

@@ -149,7 +149,7 @@ do
 done
 
 # Upload the logs.
-for x in sanitizer/* {sqlsmith,sanitizer,stacktrace,postgres-failure}.log *.diff
+for x in sanitizer/* {sqlsmith/sqlsmith,sanitizer,stacktrace,postgres-failure}.log *.diff
 do
     if ! [ -e "$x" ]; then continue ; fi
     "${PSQL[@]}" <<<"
