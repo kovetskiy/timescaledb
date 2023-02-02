@@ -194,6 +194,8 @@ main_commits = [
     if line
 ]
 
+print(main_commits)
+
 branch_commits = [
     line.split("\t")
     for line in git_output(
