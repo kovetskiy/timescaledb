@@ -162,9 +162,12 @@ print(
     f"Will commit as {os.environ['GIT_COMMITTER_NAME']} <{os.environ['GIT_COMMITTER_EMAIL']}>"
 )
 
-# Fetch the sources
-git_check(f"fetch {source_remote}")
-git_check(f"fetch {target_remote}")
+# Fetch the main branch. Apparently the local repo can be shallow in some cases
+# in Github Actions, so specify the depth. --unshallow will complain on normal
+# repositories, this is why we don't use it here.
+git_check(
+    f"fetch --quiet --depth=1000 {source_remote} main:refs/remotes/{source_remote}/main"
+)
 
 # Find out what is the branch corresponding to the previous version compared to
 # main. We will backport to that branch.
@@ -181,7 +184,19 @@ previous_version_parts = previous_version.split(".")
 previous_version_parts[-1] = "x"
 backport_target = ".".join(previous_version_parts)
 
-print(f"Will backport to {backport_target}")
+print(f"Will backport to {backport_target}.")
+
+# Fetch the target branch. Apparently the local repo can be shallow in some cases
+# in Github Actions, so specify the depth. --unshallow will complain on normal
+# repositories, this is why we don't use it here.
+git_check(
+    f"fetch --quiet --depth=1000 {target_remote} {backport_target}:refs/remotes/{target_remote}/{backport_target}"
+)
+
+# Also fetch all branches from the target repository, because we use the presence
+# of the backport branches to determine that a backport exists. It's not convenient
+# to query for branch existence through the PyGithub API.
+git_check(f"fetch {target_remote}")
 
 # Find out which commits are unique to main and target branch. Also build sets of
 # the titles of these commits. We will compare the titles to check whether a
@@ -189,17 +204,17 @@ print(f"Will backport to {backport_target}")
 main_commits = [
     line.split("\t")
     for line in git_output(
-        f'log -1000 --pretty="format:%h\t%s" {source_remote}/{backport_target}..{source_remote}/main'
+        f'log -1000 --pretty="format:%h\t%s" {target_remote}/{backport_target}..{source_remote}/main'
     ).splitlines()
     if line
 ]
 
-print(main_commits)
+print(f"Have {len(main_commits)} new commits in the main branch.")
 
 branch_commits = [
     line.split("\t")
     for line in git_output(
-        f'log -1000 --pretty="format:%h\t%s" {source_remote}/main..{source_remote}/{backport_target}'
+        f'log -1000 --pretty="format:%h\t%s" {source_remote}/main..{target_remote}/{backport_target}'
     ).splitlines()
     if line
 ]
@@ -342,11 +357,13 @@ def report_backport_not_done(original_pr, reason, details=None):
 
 # Now, go over the list of PRs that we have collected, and try to backport
 # each of them.
+print(f"Have {len(prs_to_backport)} PRs to backport.")
 for pr_info in prs_to_backport.values():
     original_pr = pr_info.pygithub_pr
     backport_branch = f"backport/{backport_target}/{original_pr.number}"
 
-    # If there is already a backport branch for this PR, just skip it.
+    # If there is already a backport branch for this PR, this probably means
+    # that we already created the backport PR. Skip it.
     if (
         git_returncode(f"rev-parse {target_remote}/{backport_branch} > /dev/null 2>&1")
         == 0
