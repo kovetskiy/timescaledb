@@ -18,7 +18,9 @@
 #include <commands/trigger.h>
 #include <fmgr.h>
 #include <nodes/makefuncs.h>
+#include <stdio.h>
 #include <storage/lmgr.h>
+#include <time.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/date.h>
@@ -1587,6 +1589,13 @@ watermark_create(const ContinuousAgg *cagg, MemoryContext top_mctx)
 	return w;
 }
 
+int64_t time_ns()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+
 TS_FUNCTION_INFO_V1(ts_continuous_agg_watermark);
 
 /*
@@ -1605,6 +1614,11 @@ TS_FUNCTION_INFO_V1(ts_continuous_agg_watermark);
 Datum
 ts_continuous_agg_watermark(PG_FUNCTION_ARGS)
 {
+	int64_t start, end;
+	int64_t dif;
+
+	start = time_ns();
+
 	const int32 hyper_id = PG_GETARG_INT32(0);
 	ContinuousAgg *cagg;
 	AclResult aclresult;
@@ -1629,6 +1643,11 @@ ts_continuous_agg_watermark(PG_FUNCTION_ARGS)
 	aclresult = pg_class_aclcheck(cagg->relid, GetUserId(), ACL_SELECT);
 	aclcheck_error(aclresult, OBJECT_MATVIEW, get_rel_name(cagg->relid));
 	watermark = watermark_create(cagg, TopTransactionContext);
+
+	end = time_ns();
+	dif = end - start;
+
+	elog(LOG, "ts_continuous_agg_watermark: %d %ld", hyper_id, dif);
 
 	PG_RETURN_INT64(watermark->value);
 }
